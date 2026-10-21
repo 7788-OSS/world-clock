@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>世界闹钟</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(160deg, #0f2027, #203a43, #2c5364);
+    min-height: 100vh;
+    color: #fff;
+    padding: 16px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  h1 { text-align: center; font-size: 22px; margin: 12px 0 4px; font-weight: 600; }
+  .subtitle { text-align: center; font-size: 13px; color: #9fc3d0; margin-bottom: 16px; }
+  .card {
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    backdrop-filter: blur(6px);
+  }
+  .section-title { font-size: 14px; color: #9fc3d0; margin-bottom: 10px; letter-spacing: 2px; }
+
+  /* 时钟网格 */
+  .clock-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .clock-item {
+    background: rgba(0,0,0,.25);
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+  }
+  .clock-city { font-size: 13px; color: #cfe8f0; }
+  .clock-time { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; margin: 4px 0 2px; }
+  .clock-date { font-size: 11px; color: #8aa9b5; }
+  .clock-diff { font-size: 11px; color: #ffd57e; }
+
+  /* 闹钟表单 */
+  .form-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  select, input {
+    background: rgba(0,0,0,.3);
+    border: 1px solid rgba(255,255,255,.2);
+    color: #fff;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 14px;
+    outline: none;
+  }
+  select:focus, input:focus { border-color: #4fd1c5; }
+  .btn {
+    background: linear-gradient(135deg, #4fd1c5, #38b2ac);
+    color: #063;
+    font-weight: 700;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 18px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .btn:active { transform: scale(.96); }
+  .btn-del {
+    background: rgba(255,99,99,.15);
+    border: 1px solid rgba(255,99,99,.4);
+    color: #ff9c9c;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  /* 闹钟列表 */
+  .alarm-item {
+    display: flex; justify-content: space-between; align-items: center;
+    background: rgba(0,0,0,.25);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-top: 8px;
+  }
+  .alarm-time { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .alarm-meta { font-size: 12px; color: #8aa9b5; margin-top: 2px; }
+  .empty { text-align: center; color: #8aa9b5; font-size: 13px; padding: 14px 0; }
+
+  /* 响铃弹窗 */
+  #ringMask {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.75);
+    z-index: 99;
+    align-items: center; justify-content: center;
+  }
+  .ring-box {
+    background: #1d3a47;
+    border-radius: 16px;
+    padding: 28px 32px;
+    text-align: center;
+    animation: shake .5s infinite;
+  }
+  @keyframes shake { 0%,100%{transform:rotate(-1.5deg)} 50%{transform:rotate(1.5deg)} }
+  .ring-box .big { font-size: 40px; margin-bottom: 8px; }
+  .ring-box .msg { font-size: 16px; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+  <h1>🌍 世界闹钟</h1>
+  <div class="subtitle" id="localTime">--:--:--</div>
+
+  <div class="card">
+    <div class="section-title">世 界 时 间</div>
+    <div class="clock-grid" id="clockGrid"></div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">添 加 闹 钟</div>
+    <div class="form-row">
+      <select id="selCity"></select>
+      <input type="time" id="inpTime">
+      <input type="text" id="inpNote" placeholder="备注（可选）" style="flex:1; min-width:120px;">
+      <button class="btn" onclick="addAlarm()">＋ 添加</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">我 的 闹 钟</div>
+    <div id="alarmList"></div>
+  </div>
+
+  <div id="ringMask">
+    <div class="ring-box">
+      <div class="big">⏰</div>
+      <div class="msg" id="ringMsg"></div>
+      <button class="btn" onclick="stopRing()">知道了</button>
+    </div>
+  </div>
+
+<script>
+const CITIES = [
+  { name: '北京',   tz: 'Asia/Shanghai' },
+  { name: '东京',   tz: 'Asia/Tokyo' },
+  { name: '新加坡', tz: 'Asia/Singapore' },
+  { name: '伦敦',   tz: 'Europe/London' },
+  { name: '巴黎',   tz: 'Europe/Paris' },
+  { name: '纽约',   tz: 'America/New_York' },
+  { name: '洛杉矶', tz: 'America/Los_Angeles' },
+  { name: '悉尼',   tz: 'Australia/Sydney' },
+];
+
+let alarms = JSON.parse(localStorage.getItem('worldClockAlarms') || '[]');
+let firedKey = null;   // 防止同一分钟重复响铃
+let audioCtx = null;
+let ringTimer = null;
+
+/* ---------- 世界时钟 ---------- */
+function cityTime(tz) {
+  const now = new Date();
+  const fmt = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: tz, hour12: false,
+    hour: '2-digit', minute: '2-digit', second: '2-digit', weekday: 'short', month: '2-digit', day: '2-digit'
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(now).map(p => [p.type, p.value]));
+  return {
+    time: `${parts.hour}:${parts.minute}:${parts.second}`,
+    date: `${parts.month}/${parts.day} ${parts.weekday}`,
+    hm: `${parts.hour}:${parts.minute}`
+  };
+}
+
+function getOffsetHours(tz, date = new Date()) {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+  const parts = Object.fromEntries(dtf.formatToParts(date).map(p => [p.type, p.value]));
+  const asUTC = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour % 24, parts.minute, parts.second);
+  return (asUTC - date.getTime()) / 3600000;
+}
+
+function localDiff(tz) {
+  const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const diff = Math.round(getOffsetHours(tz) - getOffsetHours(localTz));
+  if (diff === 0) return '与本机同时区';
+  return `${diff > 0 ? '快' : '慢'}${Math.abs(diff)} 小时`;
+}
+
+function renderClocks() {
+  document.getElementById('localTime').textContent =
+    '本机 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  const grid = document.getElementById('clockGrid');
+  grid.innerHTML = CITIES.map(c => {
+    const t = cityTime(c.tz);
+    return `<div class="clock-item">
+      <div class="clock-city">${c.name}</div>
+      <div class="clock-time">${t.time}</div>
+      <div class="clock-date">${t.date}</div>
+      <div class="clock-diff">${localDiff(c.tz)}</div>
+    </div>`;
+  }).join('');
+}
+
+/* ---------- 闹钟 ---------- */
+function initSelect() {
+  document.getElementById('selCity').innerHTML =
+    CITIES.map((c, i) => `<option value="${i}">${c.name}</option>`).join('');
+}
+
+function addAlarm() {
+  const ci = document.getElementById('selCity').value;
+  const time = document.getElementById('inpTime').value;
+  const note = document.getElementById('inpNote').value.trim();
+  if (!time) { alert('请选择时间'); return; }
+  alarms.push({ city: CITIES[ci].name, tz: CITIES[ci].tz, time, note, on: true });
+  localStorage.setItem('worldClockAlarms', JSON.stringify(alarms));
+  document.getElementById('inpTime').value = '';
+  document.getElementById('inpNote').value = '';
+  renderAlarms();
+}
+
+function delAlarm(i) {
+  alarms.splice(i, 1);
+  localStorage.setItem('worldClockAlarms', JSON.stringify(alarms));
+  renderAlarms();
+}
+
+function toggleAlarm(i) {
+  alarms[i].on = !alarms[i].on;
+  localStorage.setItem('worldClockAlarms', JSON.stringify(alarms));
+  renderAlarms();
+}
+
+function renderAlarms() {
+  const box = document.getElementById('alarmList');
+  if (!alarms.length) { box.innerHTML = '<div class="empty">还没有闹钟，添加一个吧</div>'; return; }
+  box.innerHTML = alarms.map((a, i) => {
+    const t = cityTime(a.tz);
+    const left = a.on ? ` · 该地现在 ${t.hm}` : '';
+    return `<div class="alarm-item">
+      <div>
+        <span class="alarm-time" style="${a.on ? '' : 'opacity:.4'}">${a.time}</span>
+        <div class="alarm-meta">📍${a.city}${a.note ? ' · ' + a.note : ''}${left}</div>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <button class="btn-del" onclick="toggleAlarm(${i})">${a.on ? '关闭' : '开启'}</button>
+        <button class="btn-del" onclick="delAlarm(${i})">删除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ---------- 响铃 ---------- */
+function beep() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = 880;
+  gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.4);
+}
+
+function startRing(alarm) {
+  document.getElementById('ringMsg').textContent =
+    `${alarm.city} 闹钟 ${alarm.time}${alarm.note ? ' · ' + alarm.note : ''}`;
+  document.getElementById('ringMask').style.display = 'flex';
+  beep();
+  ringTimer = setInterval(beep, 600);
+  if (navigator.vibrate) navigator.vibrate([300, 100, 300]);
+}
+
+function stopRing() {
+  document.getElementById('ringMask').style.display = 'none';
+  clearInterval(ringTimer);
+}
+
+function checkAlarms() {
+  const key = new Date().toISOString().slice(0, 16); // 精确到分钟
+  if (key === firedKey) return;
+  for (const a of alarms) {
+    if (!a.on) continue;
+    const t = cityTime(a.tz);
+    if (t.hm === a.time) {
+      firedKey = key;
+      startRing(a);
+      break;
+    }
+  }
+}
+
+/* ---------- 启动 ---------- */
+initSelect();
+renderAlarms();
+renderClocks();
+setInterval(renderClocks, 1000);
+setInterval(checkAlarms, 1000);
+</script>
+</body>
+</html>
